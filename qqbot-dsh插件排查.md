@@ -16,7 +16,7 @@ TypeError: this.deps.sessionPersistence.inspect is not a function
     at file:///C:/<Your-Sandbox-Path>/node_modules/pygmalion/src/inbound.js:620:62
 ```
 
-在 `inbound.js` 第 619 行，插件调用了旧版的 `sessionPersistence.inspect` 方法：
+在 **inbound.js** 第 619 行，插件调用了旧版的 **sessionPersistence.inspect** 方法：
 
 ```javascript
 const persisted = this.deps.sessionPersistence !== undefined
@@ -24,7 +24,7 @@ const persisted = this.deps.sessionPersistence !== undefined
   : false;
 ```
 
-新内核中，该方法已被移除，替代方案是 `create` / `open` / `flush` / `stat` / `list`。同时，旧代码存在一个隐患：当 `inspect` 不存在时，抛出的是同步的 `TypeError`，导致 `.catch` 无法拦截，直接导致消息处理流程死亡。
+新内核中，该方法已被移除，替代的接口变成了 create 、pen 、 flush 、 stat 、 list。同时，旧代码存在一个隐患：当 inspect 不存在时，抛出的是同步的 TypeError，导致 .catch 无法拦截，直接导致消息处理流程死亡。（所以才说ai方便）
 
 ## 二、 排障策略：引入 AI 辅助
 
@@ -32,7 +32,7 @@ const persisted = this.deps.sessionPersistence !== undefined
 1. 降级主环境：风险极大，否决。
 2. 修改插件源码，强行适配新内核：在沙箱中操作，试错成本低。
 
-我选择了方案 2。但面对庞大的底层源码，纯手搓效率太低。因此，我采用了**“人类决策 + AI 执行”的结对编程模式**。我将平时工作用的 DSH 作为副驾驶，让它阅读旧版插件的源码、对比新内核的接口定义、生成补丁代码，而我负责执行命令、验证结果和定位未知的报错。
+我选择了方案 2。但面对庞大的底层源码，纯手搓效率太低。因此，我采用了<strong>“人类决策 + AI 执行”的结对编程模式</strong>。我将平时工作用的 DSH 作为副驾驶，让它阅读旧版插件的源码、对比新内核的接口定义、生成补丁代码，而我负责执行命令、验证结果和提出新的问题。
 
 **让 Agent 去修复 Agent 的兼容性，是这次排障中最核心的技术手段。**
 
@@ -41,7 +41,7 @@ const persisted = this.deps.sessionPersistence !== undefined
 在修改过程中，我遭遇了连环报错，以下是核心的修复记录（均由我定位方向，AI 生成具体修改代码）：
 
 ### 1. 会话状态查询接口变更
-因为插件使用 `pnpm` 安装，源文件是硬链接，直接修改会影响全局缓存。我先断开了硬链接：
+因为插件使用 pnpm 安装，源文件是硬链接，直接修改会影响全局缓存。就先断开了硬链接：
 ```powershell
 Copy-Item inbound.js backup\inbound.js.orig
 $tmp = "inbound.js.tmp"
@@ -49,7 +49,7 @@ Copy-Item inbound.js $tmp
 Remove-Item inbound.js
 Move-Item $tmp inbound.js
 ```
-随后，将 `inspect` 替换为异步的 `stat`：
+随后，将 inspect 替换为异步的 stat：
 ```javascript
 // 旧写法
 const persisted = await this.deps.sessionPersistence.inspect(sessionId).then(() => true).catch(() => false);
@@ -64,48 +64,49 @@ const persisted = this.deps.sessionPersistence !== undefined
 ```text
 RemoteError: Unknown agent preset: pygmalion-director
 ```
-新内核不再扫描 `.agent-presets` 文件夹，而是采用声明式注册。我让 AI 辅助分析了新的 YAML 结构，将旧预设中的 11 个插件迁移至 `profiles/web/cordis.patch.yml`，并修复了桥接脚本的相对路径。
+新内核不再扫描 .agent-presets 文件夹，而是采用声明式注册。我让 AI 辅助分析了新的 YAML 结构，将旧预设中的 11 个插件迁移至 profiles/web/cordis.patch.yml，并修复了桥接脚本的相对路径。
 
 ### 3. 配置字段更名
 ```text
 persona: invalid config: - $.prefix missing required value (at prefix)
 ```
-以前叫 `text`，现在改为 `prefix`。
+以前叫 text，现在改为 prefix。
 
 ### 4. 插件遗留 Bug
 ```text
 ReferenceError: httpApiPath is not defined
     at InboundPipeline.setupAgent (setup-agent.js:77:17)
 ```
-在 `setup-agent.js` 中，解构依赖时遗漏了 `httpApiPath`，导致后续调用报错。
+在 setup-agent.js 中，解构依赖时遗漏了 httpApiPath，导致后续调用报错。
 
 ### 5. 模型提供方 ID 变更
 ```json
 {"message":"no adapter registered for provider \"deepseek\"","code":"NO_ADAPTER"}
 ```
-新内核中，Provider ID 变更为 `deepseek-official` 和 `deepseek-account`。我让 AI 帮我全局搜索了角色配置，替换了旧的 `deepseek-chat` 等字样。
+新内核中，Provider ID 变更为 **deepseek-official** 和 **deepseek-account**。我让 AI 帮我全局搜索了角色配置，替换了旧的 **deepseek-chat** 等字样。
 
 ### 6. 扩展预处理的隐蔽报错
 ```json
 {"message":"DeepSeek request extension preparation failed","code":"REQUEST_EXTENSION"}
 ```
-通过阅读内核源码发现，插件在寻找相对入口 `./pygmalion-tools.js` 时，需要读取最近的 `package.json` 来校验版本，但目标目录下的文件缺失了 `version` 字段。
+通过阅读内核源码发现，插件在寻找相对入口 **./pygmalion-tools.js** 时，需要读取最近的 **package.json** 来校验版本，但目标目录下的文件缺失了 **version** 字段。
 
 ### 7. 工具注册状态丢失
 ```text
 tool/result: Error: unknown tool "director_send"
 ```
-这是一个进程级布尔变量引发的状态不同步。我让 AI 协助重构了 `setup-agent.js` 和 `tools.js` 的注册逻辑，将其改为幂等操作，并在会话恢复时强制补发注册。
+这是一个进程级布尔变量引发的状态不同步。我让 AI 协助重构了 **setup-agent.js** 和 **tools.js** 的注册逻辑，将其改为幂等操作，并在会话恢复时强制补发注册。
 
 ## 四、 成本核算与数据总结
 
 *   **耗时**：约 1 小时（主要集中在重启验证与定位报错）。
 *   **API 费用**：约 2 元人民币（用于让工作 DSH 解析日志与生成 diff）。
 *   **代码改动**：5 个源文件 + 2 个配置文件。
-*   **备份**：保留 6 份原始文件备份于 `backups` 目录，支持随时回滚。
+*   **备份**：保留 6 份原始文件备份于 **backups** 目录，支持随时回滚。
 
 ## 五、 反思与后记
 
 这次排障让我真正理解了两代 API 在同一个进程里冲突的本质，也让我看到了 AI 辅助开发的真正价值：**它最大的作用不是替你写代码，而是极大地压低了“阅读和解析大型源码”的时间成本。** 几十万字节的日志、复杂的接口定义，它能迅速定位到冲突行。
 
 当然，AI 只是工具，决策权和架构设计依然在人脑。为了保证后续学习的深度，**关于这里涉及的 DSH 底层机制、插件运行原理以及具体每一项修复的代码逻辑分析，我将另外整理一篇附属文档（原理解析篇）进行记录。**
+~~不用在意这一行，ai帮助固然好，可是我也希望我自己就能够做到~~
